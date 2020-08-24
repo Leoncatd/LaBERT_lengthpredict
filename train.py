@@ -19,10 +19,7 @@ from utils.checkpointer import Checkpointer
 from utils.dataloader import make_data_loader
 from utils.logger import setup_logger
 from utils.tokenizer import EOS, MASK, PAD, num_tokens, LENGTH
-
-
-
-
+######
 def train(generator, optimizer, data_loader, scheduler, checkpointer,
           device, log_time, checkpoint_time, arguments):
     logger = logging.getLogger("train")
