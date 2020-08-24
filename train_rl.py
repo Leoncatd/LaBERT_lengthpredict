@@ -44,12 +44,10 @@ class SelfCriticalLoss(torch.nn.Module):
             image_id: (N,), long
             mask: (N, L), float
         """
-        #old_caption = old_caption.cpu().numpy()
         new_caption = new_caption.cpu().numpy()
         image_id = image_id.cpu().numpy()
 
         ref = dict()
-        old_hypo = dict()
         new_hypo = dict()
         for new, id in zip(new_caption, image_id):
             id = str(id)
@@ -58,18 +56,14 @@ class SelfCriticalLoss(torch.nn.Module):
             else:
                 id_ = id
             ref[id_] = self.gt_captions[id]
-            #old = tokenizer.decode(old, end_flags=[EOS, PLH])
-            #old_hypo[id_] = [{'caption': old}]
             new = tokenizer.decode(new, end_flags=[EOS])
             new_hypo[id_] = [{'caption': new}]
-        #old_hypo = self.tokenizer.tokenize(old_hypo)
         new_hypo = self.tokenizer.tokenize(new_hypo)
 
         rewards = 0.0
         for (scorer, weight) in self.scorers:
-            #_, old_scores = scorer.compute_score(ref, old_hypo)
             _, new_scores = scorer.compute_score(ref, new_hypo)
-            rewards += np.asarray(new_scores)  * weight
+            rewards += np.asarray(new_scores) * weight
         rewards = torch.from_numpy(rewards).to(probs.device).float().unsqueeze(1)
         logprobs = probs.log()
         entropy = (-logprobs * probs).mean()
@@ -170,18 +164,18 @@ def train(generator, optimizer, data_loader, scheduler, checkpointer,
             #pred_scores = pred_scores.contiguous().view(-1, num_tokens)
             #pred_scores = pred_scores[mask_position]
             #gt_length = token_type_ids[:, 100]
-
             #gt_token_ids = input_token_ids[:,1:]#.contiguous().view(-1)[mask_position]
             _, pred_token_ids = F.softmax(pred_scores, dim=-1).max(dim=-1)
 
             pred_levelp_list.append(length_score)
             pred_ids_list.append(pred_token_ids)
 
+
         pred_levelp_list = torch.stack(pred_levelp_list,1)
         pred_ids_list = torch.stack(pred_ids_list, 1)
         levelp_max = torch.argmax(pred_levelp_list,1)
-        ids_max = torch.gather(pred_ids_list, 1, levelp_max.unsqueeze(-1).expand_as(pred_ids_list))[:,0]
-        print(ids_max)
+        pred_ids_max = torch.gather(pred_ids_list, 1, levelp_max.unsqueeze(-1).expand_as(pred_ids_list))[:,0]
+        print(pred_ids_max)
             #pred_list[length_score] = pred_token_ids.cpu().numpy()
 
             #print(pred_list)
@@ -190,7 +184,7 @@ def train(generator, optimizer, data_loader, scheduler, checkpointer,
 
         #loss_words = criterion(pred_scores, gt_token_ids)
         #gt_token_ids = input_token_ids[:, 1:]
-        masker_loss, masker_reward = rl_criterion(pred_token_ids, level_probs, image_id)
+        masker_loss, masker_reward = rl_criterion(pred_ids_max, levelp_max, image_id)
 
         #loss_length = crossEntropyLoss(length_score, gt_maxlength-1)
 
