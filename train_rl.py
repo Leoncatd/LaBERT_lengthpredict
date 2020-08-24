@@ -44,19 +44,19 @@ class SelfCriticalLoss(torch.nn.Module):
             image_id: (N,), long
             mask: (N, L), float
         """
-        new_caption = new_caption.cpu().numpy()
-        image_id = image_id.cpu().numpy()
+        # new_caption = new_caption.cpu().numpy()
+        # image_id = image_id.cpu().numpy()
 
         ref = dict()
         new_hypo = dict()
         for new, id in zip(new_caption, image_id):
-            id = str(id)
+            id = str(id.cpu().numpy())
             if id in ref.keys():
                 id_ = id + '_'
             else:
                 id_ = id
             ref[id_] = self.gt_captions[id]
-            new = tokenizer.decode(new, end_flags=[EOS])
+            new = tokenizer.decode(new.cpu().numpy(), end_flags=[EOS])
             new_hypo[id_] = [{'caption': new}]
         new_hypo = self.tokenizer.tokenize(new_hypo)
 
@@ -167,24 +167,23 @@ def train(generator, optimizer, data_loader, scheduler, checkpointer,
             #gt_token_ids = input_token_ids[:,1:]#.contiguous().view(-1)[mask_position]
             _, pred_token_ids = F.softmax(pred_scores, dim=-1).max(dim=-1)
 
+            #pred_token_ids.
+            pred_zeros = torch.zeros(pred_token_ids.shape[0], 25).to(pred_token_ids.device)
+            pred_zeros[:, :pred_token_ids.shape[1]] = pred_token_ids
+
+
             pred_levelp_list.append(length_score)
-            pred_ids_list.append(pred_token_ids)
+            pred_ids_list.append(pred_zeros)
 
+        pred_levelp_list = torch.stack(pred_levelp_list, 1)
 
-        pred_levelp_list = torch.stack(pred_levelp_list,1)
-        pred_ids_list = torch.stack(pred_ids_list, 1)
-        levelp_max = torch.argmax(pred_levelp_list,1)
-        pred_ids_max = torch.gather(pred_ids_list, 1, levelp_max.unsqueeze(-1).expand_as(pred_ids_list))[:,0]
-        print(pred_ids_max)
-            #pred_list[length_score] = pred_token_ids.cpu().numpy()
-
-            #print(pred_list)
+        levelp_max_fin, levelp_max = torch.max(pred_levelp_list,1) #b*1
+        pred_ids_fin = [pred_ids_list[levelp_max[i,0]][i] for i in range(len(levelp_max))]
+        #pred_ids_fin = [pred_ids_list[levelp_max[0, 0]][0] for i in range(len(levelp_max))]
 
 
 
-        #loss_words = criterion(pred_scores, gt_token_ids)
-        #gt_token_ids = input_token_ids[:, 1:]
-        masker_loss, masker_reward = rl_criterion(pred_ids_max, levelp_max, image_id)
+        masker_loss, masker_reward = rl_criterion(pred_ids_fin, levelp_max_fin, image_id)
 
         #loss_length = crossEntropyLoss(length_score, gt_maxlength-1)
 
@@ -193,7 +192,7 @@ def train(generator, optimizer, data_loader, scheduler, checkpointer,
 
 
         optimizer.zero_grad()
-        #loss.backward()
+        loss.backward()
         clip_grad_norm_(generator.parameters(), config.solver.grad_clip)
         optimizer.step()
         scheduler.step()
@@ -204,9 +203,9 @@ def train(generator, optimizer, data_loader, scheduler, checkpointer,
             logger.info(
                 '  '.join([
                     "iter: {iter}", "time: {time:.4f}", "mem: {mem:.2f}",
-                    "lr: {lr:.8f}", "loss_words:{loss_words:.4f}", "loss_length:{loss_length:.4f}","loss: {loss:.4f}"
+                    "lr: {lr:.8f}","loss: {loss:.4f}"
                 ]).format(
-                    iter=iteration, time=batch_time, #loss=loss,
+                    iter=iteration, time=batch_time, loss=loss,
                     #loss_words = loss_words, #loss_length = loss_length,
                     lr=optimizer.param_groups[0]["lr"],
                     mem=torch.cuda.max_memory_allocated() / 1024.0 ** 3,
